@@ -61,5 +61,28 @@ router.post('/login', async (req, res) => {
     }
 });
 
+// --- API สำหรับดึงข้อมูลผู้ใช้ทั้งหมด ---
+// GET /api/admin/users?adminUserId=1
+router.get('/users', async (req, res) => {
+    const { adminUserId } = req.query;
+
+    // 1. ตรวจสอบสิทธิ์แอดมิน
+    if (!(await isAdmin(adminUserId))) {
+        return res.status(403).json({ message: 'Permission denied. Admin access required.' });
+    }
+
+    try {
+        // 2. ดึงข้อมูลผู้ใช้ทั้งหมดจากฐานข้อมูล (ไม่เอารหัสผ่าน)
+        const [users] = await db.execute(
+            'SELECT id, username, wallet_balance, role, created_at FROM users'
+        );
+        res.status(200).json(users);
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดใน Server' });
+    }
+});
+
 
 module.exports = router;
