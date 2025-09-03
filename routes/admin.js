@@ -24,7 +24,7 @@ router.get('/users', async (req, res) => {
   try {
     // CHANGED: Select columns based on new schema ('user_id')
     const [users] = await db.execute(
-      'SELECT user_id, username, wallet_balance, role, created_at FROM users'
+      'SELECT user_id, username,password,wallet_balance, role, created_at FROM users'
     );
     res.status(200).json(users);
 
