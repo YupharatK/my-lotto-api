@@ -6,7 +6,7 @@ const router = express.Router();
 // --- Helper function to check if a user is an admin ---
 const isAdmin = async (userId) => {
     if (!userId) return false;
-    const [rows] = await db.execute('SELECT role FROM users WHERE id = ?', [userId]);
+    const [rows] = await db.execute('SELECT role FROM users WHERE user_id = ?', [userId]); // << แก้เป็นชื่อที่ถูกต้อง
     return rows.length > 0 && rows[0].role === 'admin';
 };
 
