@@ -6,18 +6,19 @@ const router = express.Router();
 // --- API Endpoint: POST /api/auth/register ---
 router.post('/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ message: 'กรุณากรอก Username และ Password' });
-    }
+   const { username, email, password } = req.body;
+   if (!username || !email || !password) {
+    return res.status(400).json({ message: 'กรุณากรอก Username, Email และ Password' });
+  }
+
 
     // CHANGED: Set default role to 'user'
     const defaultRole = 'user'; 
     const initialWallet = 500.00;
 
     const [result] = await db.execute(
-      'INSERT INTO users (username, password, wallet_balance, role) VALUES (?, ?, ?, ?)',
-      [username, password, initialWallet, defaultRole]
+      'INSERT INTO users (username, password, wallet_balance, role, email) VALUES (?, ?, ?, ?, ?)',
+      [username, email, password, initialWallet, defaultRole]
     );
 
     res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ', userId: result.insertId });
@@ -34,20 +35,20 @@ router.post('/register', async (req, res) => {
 // --- API Endpoint: POST /api/auth/login ---
 router.post('/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { email, password } = req.body;
 
     // CHANGED: Select specific columns and use 'user_id'
     const [rows] = await db.execute(
-      'SELECT user_id, username, wallet_balance, role FROM users WHERE username = ?',
-      [username]
+      'SELECT user_id, email, wallet_balance, role FROM users WHERE email = ?',
+      [email]
     );
     const user = rows[0];
 
     // NOTE: This assumes plaintext password comparison as per previous agreement
-    const [passwordCheck] = await db.execute('SELECT password FROM users WHERE username = ?', [username]);
+    const [passwordCheck] = await db.execute('SELECT password FROM users WHERE email = ?', [email]);
 
     if (!user || password !== passwordCheck[0].password) {
-      return res.status(401).json({ message: 'Username หรือ Password ไม่ถูกต้อง' });
+      return res.status(401).json({ message: 'email หรือ Password ไม่ถูกต้อง' });
     }
 
     res.json({ message: 'เข้าสู่ระบบสำเร็จ', user: user });
