@@ -6,33 +6,29 @@ const router = express.Router();
 // --- API Endpoint: POST /api/auth/register ---
 router.post('/register', async (req, res) => {
   try {
-   const { username, email, password } = req.body;
-   if (!username || !email || !password) {
-    return res.status(400).json({ message: 'กรุณากรอก Username, Email และ Password' });
-  }
-    // ADDED: เพิ่มการตรวจสอบ wallet_balance
+    // แก้ไขตรงนี้
+    const { username, email, password, wallet_balance } = req.body;
+
+    if (!username || !email || !password || wallet_balance === undefined) {
+      return res.status(400).json({ message: 'กรุณากรอกข้อมูลให้ครบทุกช่อง' });
+    }
+    
     const amount = parseFloat(wallet_balance);
     if (isNaN(amount) || amount < 100) {
       return res.status(400).json({ message: 'ยอดเงินเริ่มต้นต้องเป็นตัวเลขและไม่ต่ำกว่า 100' });
     }
 
-    // CHANGED: Set default role to 'user'
-    const defaultRole = 'user'; 
-    // const initialWallet = 500.00;
+    const defaultRole = 'user';
 
     const [result] = await db.execute(
       'INSERT INTO users (username, email, password, wallet_balance, role) VALUES (?, ?, ?, ?, ?)',
-      [username, email, password, initialWallet, defaultRole]
+      [username, email, password, amount, defaultRole]
     );
 
     res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ', userId: result.insertId });
 
   } catch (error) {
-    if (error.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ message: 'Username นี้มีผู้ใช้งานแล้ว' });
-    }
-    console.error(error);
-    res.status(500).json({ message: 'เกิดข้อผิดพลาดใน Server' });
+    // ... (error handling)
   }
 });
 
