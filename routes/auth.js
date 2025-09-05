@@ -25,7 +25,7 @@ router.post('/register', async (req, res) => {
       [username, email, password, amount, defaultRole]
     );
 
-    res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ', userId: result.insertId });
+    res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ', userId: result.insertId }); 
 
   } catch (error) {
     // ... (error handling)
