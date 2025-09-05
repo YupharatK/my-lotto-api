@@ -10,11 +10,15 @@ router.post('/register', async (req, res) => {
    if (!username || !email || !password) {
     return res.status(400).json({ message: 'กรุณากรอก Username, Email และ Password' });
   }
-
+    // ADDED: เพิ่มการตรวจสอบ wallet_balance
+    const amount = parseFloat(wallet_balance);
+    if (isNaN(amount) || amount < 100) {
+      return res.status(400).json({ message: 'ยอดเงินเริ่มต้นต้องเป็นตัวเลขและไม่ต่ำกว่า 100' });
+    }
 
     // CHANGED: Set default role to 'user'
     const defaultRole = 'user'; 
-    const initialWallet = 500.00;
+    // const initialWallet = 500.00;
 
     const [result] = await db.execute(
       'INSERT INTO users (username, email, password, wallet_balance, role) VALUES (?, ?, ?, ?, ?)',
