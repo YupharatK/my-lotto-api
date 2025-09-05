@@ -37,20 +37,22 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // CHANGED: Select specific columns and use 'user_id'
+    // 1. ดึงข้อมูลทั้งหมดของ user ที่ต้องการในครั้งเดียว
     const [rows] = await db.execute(
-      'SELECT user_id, email, wallet_balance, role FROM users WHERE email = ?',
+      'SELECT * FROM users WHERE email = ?',
       [email]
     );
     const user = rows[0];
 
-    // NOTE: This assumes plaintext password comparison as per previous agreement
-    const [passwordCheck] = await db.execute('SELECT password FROM users WHERE email = ?', [email]);
-
-    if (!user || password !== passwordCheck[0].password) {
-      return res.status(401).json({ message: 'email หรือ Password ไม่ถูกต้อง' });
+    // 2. ตรวจสอบว่ามี user หรือไม่ และรหัสผ่านตรงกันหรือไม่
+    if (!user || password !== user.password) {
+      return res.status(401).json({ message: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' });
     }
 
+    // 3. ลบรหัสผ่านออกจาก object ก่อนส่งกลับไป (เพื่อความปลอดภัย)
+    delete user.password;
+
+    // 4. ส่งข้อมูลกลับในรูปแบบที่ Flutter ต้องการ
     res.json({ message: 'เข้าสู่ระบบสำเร็จ', user: user });
 
   } catch (error) {
