@@ -17,7 +17,7 @@ router.post('/register', async (req, res) => {
     const initialWallet = 500.00;
 
     const [result] = await db.execute(
-      'INSERT INTO users (username, password, wallet_balance, role, email) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO users (username, email, password, wallet_balance, role) VALUES (?, ?, ?, ?, ?)',
       [username, email, password, initialWallet, defaultRole]
     );
 
