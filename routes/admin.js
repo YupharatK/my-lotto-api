@@ -232,4 +232,48 @@ router.post("/draw", async (req, res) => {
   }
 });
 
+
+//Api รีเซ็ตระบบสุ่มเลข 100 ตัวยังไม่ได้เพิ่มการรีเซ็ตรางวัล
+router.post('/regenerate-tickets', async (req, res) => {
+    const { adminUserId } = req.body;
+    if (!(await isAdmin(adminUserId))) {
+        return res.status(403).json({ message: 'Permission denied' });
+    }
+
+    const connection = await db.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // --- Step 1: Clear any unsold tickets ---
+        await connection.execute("DELETE FROM lotto_tickets WHERE status = 'available'");
+        
+        // --- Step 2: Generate 100 new unique tickets ---
+        const ticketCount = 100;
+        const defaultPrice = 80.00;
+        const ticketNumbers = new Set();
+        while (ticketNumbers.size < ticketCount) {
+            const randomNumber = String(Math.floor(100000 + Math.random() * 900000));
+            ticketNumbers.add(randomNumber);
+        }
+
+        const values = [...ticketNumbers].map(number => [
+            number,
+            defaultPrice,
+            'available'
+        ]);
+        
+        const sql = 'INSERT INTO lotto_tickets (ticket_number, price, status) VALUES ?';
+        const [result] = await db.query(sql, [values]);
+
+        await connection.commit();
+        res.status(200).json({ message: `ล้างและสร้างสลากใหม่ ${result.affectedRows} ใบสำเร็จ` });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Regenerate Tickets Error:", error);
+        res.status(500).json({ message: "เกิดข้อผิดพลาดในการสร้างสลากใหม่" });
+    } finally {
+        connection.release();
+    }
+});
 module.exports = router;
