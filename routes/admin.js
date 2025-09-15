@@ -233,7 +233,7 @@ router.post("/draw", async (req, res) => {
 });
 
 
-//Api รีเซ็ตระบบสุ่มเลข 100 ตัวยังไม่ได้เพิ่มการรีเซ็ตรางวัล
+//Api รีเซ็ตระบบสุ่มเลข 100 ตัวยังไม่ได้เพิ่มการรีเซ็ตรางวัล //
 router.post('/regenerate-tickets', async (req, res) => {
     const { adminUserId } = req.body;
     if (!(await isAdmin(adminUserId))) {
