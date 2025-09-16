@@ -1,135 +1,82 @@
+// routes/lotto.js
+//ซื้อ lotto
 const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-const TICKET_PRICE = 80.00; // กำหนดราคาลอตเตอรี่ตายตัว
+router.post('/purchase', async (req, res) => {
+    const { userId, ticketNumber } = req.body;
 
-// --- Helper function to get the current active round ---
-const getActiveRound = async () => {
-    const [rows] = await db.execute(
-        "SELECT id FROM lotto_rounds WHERE status = 'active' ORDER BY id DESC LIMIT 1"
-    );
-    if (rows.length === 0) {
-        // If no active round, create one (optional, good for robustness)
-        const [newRound] = await db.execute("INSERT INTO lotto_rounds (status) VALUES ('active')");
-        return newRound.insertId;
-    }
-    return rows[0].id;
-};
-
-
-// --- 1. API สำหรับดูว่าตัวเองซื้อเลขอะไรไปแล้วบ้าง ---
-// GET /api/lotto/tickets/mine?userId=1
-router.get('/tickets/mine', async (req, res) => {
-    const { userId } = req.query;
-
-    if (!userId) {
-        return res.status(400).json({ message: 'กรุณาระบุ userId' });
+    if (!userId || !ticketNumber) {
+        return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วน' });
     }
 
+    const connection = await db.getConnection();
     try {
-        const activeRoundId = await getActiveRound();
-        const [tickets] = await db.execute(
-            'SELECT ticket_number, purchased_at FROM lotto_tickets WHERE user_id = ? AND round_id = ? ORDER BY purchased_at DESC',
-            [userId, activeRoundId]
-        );
-        res.json(tickets);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดใน Server' });
-    }
-});
+        await connection.beginTransaction();
 
-
-// --- 2. API สำหรับดูรายการลอตเตอรี่ที่ "ถูกขายไปแล้ว" ---
-// GET /api/lotto/tickets/sold
-router.get('/tickets/sold', async (req, res) => {
-    try {
-        const activeRoundId = await getActiveRound();
-        const [tickets] = await db.execute(
-            'SELECT ticket_number FROM lotto_tickets WHERE round_id = ?',
-            [activeRoundId]
-        );
-        // ส่งกลับไปแค่ array ของตัวเลข
-        const soldNumbers = tickets.map(t => t.ticket_number);
-        res.json(soldNumbers);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดใน Server' });
-    }
-});
-
-
-// --- 3. API สำหรับซื้อลอตเตอรี่ ---
-// POST /api/lotto/tickets/buy
-router.post('/tickets/buy', async (req, res) => {
-    const { userId, ticket_number } = req.body;
-
-    // --- Basic Validation ---
-    if (!userId || !ticket_number) {
-        return res.status(400).json({ message: 'กรุณาส่งข้อมูลให้ครบถ้วน (userId, ticket_number)' });
-    }
-    if (!/^\d{6}$/.test(ticket_number)) {
-        return res.status(400).json({ message: 'หมายเลขลอตเตอรี่ต้องเป็นตัวเลข 6 หลักเท่านั้น' });
-    }
-
-    const connection = await db.getConnection(); // Get a connection from the pool for transaction
-    try {
-        await connection.beginTransaction(); // --- START TRANSACTION ---
-
-        const activeRoundId = await getActiveRound();
-
-        // 1. เช็กว่าเลขนี้ถูกขายไปแล้วหรือยัง (Lock a row for checking)
-        const [existingTickets] = await connection.execute(
-            'SELECT id FROM lotto_tickets WHERE ticket_number = ? AND round_id = ? FOR UPDATE',
-            [ticket_number, activeRoundId]
+        // 1. Find the ticket and check if it's available, locking the row
+        const [tickets] = await connection.execute(
+            "SELECT id, price, status FROM lotto_tickets WHERE ticket_number = ? FOR UPDATE",
+            [ticketNumber]
         );
 
-        if (existingTickets.length > 0) {
-            await connection.rollback(); // --- ROLLBACK ---
-            return res.status(409).json({ message: 'ขออภัย, หมายเลขนี้ถูกขายไปแล้ว' });
+        if (tickets.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'ไม่พบสลากหมายเลขนี้' });
         }
         
-        // 2. เช็กเงินในกระเป๋าผู้ใช้ (Lock the user row)
+        const ticket = tickets[0];
+        if (ticket.status !== 'available') {
+            await connection.rollback();
+            return res.status(409).json({ message: 'สลากหมายเลขนี้ถูกขายไปแล้ว' });
+        }
+
+        // 2. Check user's wallet balance, locking the row
         const [users] = await connection.execute(
-            'SELECT wallet_balance FROM users WHERE id = ? FOR UPDATE',
+            "SELECT wallet_balance FROM users WHERE user_id = ? FOR UPDATE",
             [userId]
         );
 
-        if (users.length === 0) {
-            await connection.rollback(); // --- ROLLBACK ---
-            return res.status(404).json({ message: 'ไม่พบผู้ใช้งานนี้' });
-        }
-
         const user = users[0];
-        if (user.wallet_balance < TICKET_PRICE) {
-            await connection.rollback(); // --- ROLLBACK ---
-            return res.status(402).json({ message: 'ยอดเงินใน Wallet ของคุณไม่เพียงพอ' });
+        if (user.wallet_balance < ticket.price) {
+            await connection.rollback();
+            return res.status(402).json({ message: 'ยอดเงินใน Wallet ไม่เพียงพอ' });
         }
 
-        // 3. ถ้าทุกอย่างผ่าน -> หักเงินและเพิ่มข้อมูลตั๋ว
+        // --- All checks passed, proceed with purchase ---
+
+        // 3. Deduct money from user's wallet
         await connection.execute(
-            'UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?',
-            [TICKET_PRICE, userId]
+            "UPDATE users SET wallet_balance = wallet_balance - ? WHERE user_id = ?",
+            [ticket.price, userId]
         );
 
+        // 4. Mark the ticket as 'sold'
         await connection.execute(
-            'INSERT INTO lotto_tickets (user_id, round_id, ticket_number) VALUES (?, ?, ?)',
-            [userId, activeRoundId, ticket_number]
+            "UPDATE lotto_tickets SET status = 'sold' WHERE id = ?",
+            [ticket.id]
         );
         
-        await connection.commit(); // --- COMMIT TRANSACTION ---
-        
-        res.status(201).json({ message: `ซื้อลอตเตอรี่หมายเลข ${ticket_number} สำเร็จ!` });
+        // 5. Create a record in lotto_item to link user and ticket
+        // Assuming lotto_item's `ticket_id` is the foreign key to lotto_tickets' `id`
+        await connection.execute(
+            "INSERT INTO lotto_item (userid, ticket_id, purchased_at) VALUES (?, ?, NOW())",
+            [userId, ticket.id]
+        );
+
+        await connection.commit();
+        res.status(200).json({ message: `ซื้อสลากหมายเลข ${ticketNumber} สำเร็จ` });
 
     } catch (error) {
-        await connection.rollback(); // --- ROLLBACK on any other error ---
-        console.error(error);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดร้ายแรงใน Server' });
+        await connection.rollback();
+        console.error("Purchase Error:", error);
+        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการซื้อสลาก' });
     } finally {
-        connection.release(); // Release connection back to the pool
+        connection.release();
     }
 });
 
+//
 
 module.exports = router;

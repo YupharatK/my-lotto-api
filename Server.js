@@ -4,6 +4,10 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth'); // import auth routes
 const lottoRoutes = require('./routes/lotto');
 const adminRoutes = require('./routes/admin');
+const walletRoutes = require('./routes/wallet');
+const resultsRoutes = require('./routes/results');
+const prizesRoutes = require('./routes/prizes');
+
 
 
 const app = express();
@@ -17,6 +21,9 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/lotto', lottoRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/results', resultsRoutes);
+app.use('/api/prizes', prizesRoutes);
 
 // Route พื้นฐานสำหรับทดสอบว่า Server ทำงาน
 app.get('/', (req, res) => {
