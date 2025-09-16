@@ -171,7 +171,7 @@ router.post('/draw', async (req, res) => {
 
 
 
-//Api รีเซ็ตระบบสุ่มเลข 100 ตัวยังไม่ได้เพิ่มการรีเซ็ตรางวัล //
+//Api รีเซ็ตระบบสุ่มเลข 100  //
 router.post('/reset-system', async (req, res) => {
     const { adminUserId } = req.body;
     if (!(await isAdmin(adminUserId))) {
@@ -182,28 +182,16 @@ router.post('/reset-system', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. Clear ALL old transactional data (hard reset)
+        // --- 1. Clear ALL data for a full reset ---
         await connection.execute("DELETE FROM prizes");
         await connection.execute("DELETE FROM lotto_item");
         await connection.execute("DELETE FROM lotto_tickets");
-        // We can optionally clear the draw results too for a full clean slate
-        // await connection.execute("DELETE FROM draw_results");
+        await connection.execute("DELETE FROM draw_results"); // ADDED: Clear prize history
 
-        // 2. Generate 100 new unique tickets
-        const ticketCount = 100;
-        const defaultPrice = 80.00;
-        const ticketNumbers = new Set();
-        while (ticketNumbers.size < ticketCount) {
-            const randomNumber = String(Math.floor(100000 + Math.random() * 900000));
-            ticketNumbers.add(randomNumber);
-        }
-
-        const values = [...ticketNumbers].map(number => [number, defaultPrice, 'available']);
-        const sql = 'INSERT INTO lotto_tickets (ticket_number, price, status) VALUES ?';
-        const [result] = await db.query(sql, [values]);
+        // --- 2. REMOVED: The ticket generation logic is gone ---
 
         await connection.commit();
-        res.status(200).json({ message: `รีเซ็ตระบบและสร้างสลากใหม่ ${result.affectedRows} ใบสำเร็จ` });
+        res.status(200).json({ message: `รีเซ็ตระบบ ล้างข้อมูลสลากและผลรางวัลทั้งหมดสำเร็จ` });
 
     } catch (error) {
         await connection.rollback();
