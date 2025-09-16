@@ -24,7 +24,7 @@ router.post('/claim', async (req, res) => {
                 pt.reward 
              FROM prizes p
              JOIN lotto_item li ON p.lotto_item_id = li.loto_id
-             JOIN prizes_type pt ON p.prizes_type_id = pt.ptype_id
+             JOIN prizes_type pt ON p.prizes_type = pt.ptype_id
              WHERE p.lotto_item_id = ? AND li.userid = ?`,
             [lottoItemId, userId]
         );
