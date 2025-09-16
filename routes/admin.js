@@ -119,7 +119,7 @@ router.post('/draw', async (req, res) => {
             const [winners] = await connection.execute(sqlQuery, [prizeTypeId, matchPattern]);
 
             for (const winner of winners) {
-                await connection.execute("INSERT INTO prizes (lotto_item_id, prizes_type_id) VALUES (?, ?)", [winner.loto_id, prizeTypeId]);
+                await connection.execute("INSERT INTO prizes (lotto_item_id, prizes_type) VALUES (?, ?)", [winner.loto_id, prizeTypeId]);
                 winnersList.push({ username: winner.username, ticket_number: winner.ticket_number });
             }
             return winnersList;
