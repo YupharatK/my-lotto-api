@@ -96,6 +96,41 @@ router.post('/draw', async (req, res) => {
     try {
         await connection.beginTransaction();
 
+        // ===================================================
+        // >>  ประกาศฟังก์ชันผู้ช่วย (Helper Function) ไว้ตรงนี้ <<
+        // ===================================================
+        const findAndProcessWinners = async (connection, prizeTypeId, numberToMatch, matchType = 'exact') => {
+            let winnersList = [];
+            const sqlQuery = `
+                SELECT 
+                    li.loto_id, 
+                    lt.ticket_number, 
+                    u.username, 
+                    u.user_id, 
+                    pt.reward 
+                FROM 
+                    lotto_item li 
+                    JOIN users u ON li.userid = u.user_id 
+                    JOIN prizes_type pt ON pt.ptype_id = ? 
+                    JOIN lotto_tickets lt ON li.ticket_id = lt.id 
+                WHERE 
+                    lt.ticket_number ${matchType === 'exact' ? '= ?' : 'LIKE ?'}
+            `;
+            const matchPattern = matchType === 'exact' ? numberToMatch : `%${numberToMatch}`;
+            const [winners] = await connection.execute(sqlQuery, [prizeTypeId, matchPattern]);
+
+            for (const winner of winners) {
+                // บันทึกการถูกรางวัลลงในตาราง prizes
+                await connection.execute("INSERT INTO prizes (lotto_item_id, prizes_type_id) VALUES (?, ?)", [winner.loto_id, prizeTypeId]);
+                
+                // (เราได้ย้ายการจ่ายเงินไปไว้ที่ API claim แล้ว)
+
+                winnersList.push({ username: winner.username, ticket_number: winner.ticket_number });
+            }
+            return winnersList;
+        };
+        // ===================================================
+
         // 1. Generate all 5 winning numbers
         const prize1 = String(Math.floor(100000 + Math.random() * 900000));
         const prize2 = String(Math.floor(100000 + Math.random() * 900000));
@@ -104,13 +139,13 @@ router.post('/draw', async (req, res) => {
         const last2 = String(Math.floor(Math.random() * 100)).padStart(2, '0');
         const winningNumbers = { prize1, prize2, prize3, last3, last2 };
 
-        // 2. Save the results to the new 'draw_results' table
+        // 2. Save the results to the 'draw_results' table
         await connection.execute(
             'INSERT INTO draw_results (prize1_number, prize2_number, prize3_number, last3_number, last2_number) VALUES (?, ?, ?, ?, ?)',
             [prize1, prize2, prize3, last3, last2]
         );
 
-        // 3. Find and process winners for all prizes
+        // 3. Find winners for all prizes by calling the helper function
         const allWinners = {};
         allWinners.prize1 = await findAndProcessWinners(connection, 1, winningNumbers.prize1, 'exact');
         allWinners.prize2 = await findAndProcessWinners(connection, 2, winningNumbers.prize2, 'exact');
