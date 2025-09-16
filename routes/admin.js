@@ -227,4 +227,30 @@ router.post('/reset-system', async (req, res) => {
         connection.release();
     }
 });
+
+// GET - ดึงผลรางวัลงวดล่าสุด
+router.get('/results/latest', async (req, res) => {
+    const connection = await db.getConnection();
+    try {
+        const sqlQuery = `
+            SELECT * FROM draw_results 
+            ORDER BY draw_date DESC 
+            LIMIT 1
+        `;
+        const [results] = await connection.execute(sqlQuery);
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'ยังไม่มีข้อมูลผลการออกรางวัล' });
+        }
+        
+        // ส่งข้อมูลผลรางวัลล่าสุดกลับไป
+        res.status(200).json(results[0]);
+
+    } catch (error) {
+        console.error("Get Latest Results Error:", error);
+        res.status(500).json({ message: "เกิดข้อผิดพลาดในการดึงข้อมูล" });
+    } finally {
+        connection.release();
+    }
+});
 module.exports = router;
