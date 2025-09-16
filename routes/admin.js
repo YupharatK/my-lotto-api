@@ -87,7 +87,7 @@ router.post("/generate-tickets", async (req, res) => {
 
 // (ต้องมีฟังก์ชัน isAdmin และ db connection เหมือนเดิม)
 router.post('/draw', async (req, res) => {
-    const { adminUserId } = req.body;
+    const { adminUserId, drawType = 'from_sold' } = req.body;
     if (!(await isAdmin(adminUserId))) {
         return res.status(403).json({ message: 'Permission denied' });
     }
@@ -96,9 +96,6 @@ router.post('/draw', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // ===================================================
-        // >>  ประกาศฟังก์ชันผู้ช่วย (Helper Function) ไว้ตรงนี้ <<
-        // ===================================================
         const findAndProcessWinners = async (connection, prizeTypeId, numberToMatch, matchType = 'exact') => {
             let winnersList = [];
             const sqlQuery = `
@@ -116,48 +113,65 @@ router.post('/draw', async (req, res) => {
                 WHERE 
                     lt.ticket_number ${matchType === 'exact' ? '= ?' : 'LIKE ?'}
             `;
+            // ^^^ CORRECTED JOIN: lt ON li.ticket_id = lt.id ^^^
+
             const matchPattern = matchType === 'exact' ? numberToMatch : `%${numberToMatch}`;
             const [winners] = await connection.execute(sqlQuery, [prizeTypeId, matchPattern]);
 
             for (const winner of winners) {
-                // บันทึกการถูกรางวัลลงในตาราง prizes
                 await connection.execute("INSERT INTO prizes (lotto_item_id, prizes_type_id) VALUES (?, ?)", [winner.loto_id, prizeTypeId]);
-                
-                // (เราได้ย้ายการจ่ายเงินไปไว้ที่ API claim แล้ว)
-
                 winnersList.push({ username: winner.username, ticket_number: winner.ticket_number });
             }
             return winnersList;
         };
-        // ===================================================
 
-        // 1. Generate all 5 winning numbers
-        const prize1 = String(Math.floor(100000 + Math.random() * 900000));
-        const prize2 = String(Math.floor(100000 + Math.random() * 900000));
-        const prize3 = String(Math.floor(100000 + Math.random() * 900000));
-        const last3 = prize1.slice(-3);
-        const last2 = String(Math.floor(Math.random() * 100)).padStart(2, '0');
-        const winningNumbers = { prize1, prize2, prize3, last3, last2 };
-
-        // 2. Save the results to the 'draw_results' table
-        await connection.execute(
-            'INSERT INTO draw_results (prize1_number, prize2_number, prize3_number, last3_number, last2_number) VALUES (?, ?, ?, ?, ?)',
-            [prize1, prize2, prize3, last3, last2]
-        );
-
-        // 3. Find winners for all prizes by calling the helper function
+        let winningNumbers = {};
         const allWinners = {};
-        allWinners.prize1 = await findAndProcessWinners(connection, 1, winningNumbers.prize1, 'exact');
-        allWinners.prize2 = await findAndProcessWinners(connection, 2, winningNumbers.prize2, 'exact');
-        allWinners.prize3 = await findAndProcessWinners(connection, 3, winningNumbers.prize3, 'exact');
-        allWinners.last3 = await findAndProcessWinners(connection, 4, winningNumbers.last3, 'suffix');
-        allWinners.last2 = await findAndProcessWinners(connection, 5, winningNumbers.last2, 'suffix');
 
+        if (drawType === 'from_sold') {
+            const [soldTickets] = await connection.execute(
+                "SELECT lt.ticket_number FROM lotto_item li JOIN lotto_tickets lt ON li.ticket_id = lt.id"
+            );
+            // ^^^ CORRECTED JOIN: lt ON li.ticket_id = lt.id ^^^
+
+            if (soldTickets.length < 5) {
+                await connection.rollback();
+                return res.status(400).json({ message: `มีสลากขายไปเพียง ${soldTickets.length} ใบ ไม่สามารถออกรางวัลได้` });
+            }
+
+            const shuffledTickets = [...soldTickets].sort(() => 0.5 - Math.random());
+            const winningTickets = shuffledTickets.slice(0, 5);
+
+            winningNumbers = {
+                prize1: winningTickets[0].ticket_number,
+                prize2: winningTickets[1].ticket_number,
+                prize3: winningTickets[2].ticket_number,
+                last3: winningTickets[0].ticket_number.slice(-3),
+                last2: winningTickets[3].ticket_number.slice(-2),
+            };
+        } else {
+            // ... (Logic for 'from_all' is correct as is) ...
+            const prize1 = String(Math.floor(100000 + Math.random() * 900000));
+            const prize2 = String(Math.floor(100000 + Math.random() * 900000));
+            const prize3 = String(Math.floor(100000 + Math.random() * 900000));
+            const last3 = prize1.slice(-3);
+            const last2 = String(Math.floor(Math.random() * 100)).padStart(2, "0");
+            winningNumbers = { prize1, prize2, prize3, last3, last2 };
+        }
+
+        // --- Find and Process Winners ---
+        allWinners.prize1 = await findAndProcessWinners(connection, 1, winningNumbers.prize1, "exact");
+        allWinners.prize2 = await findAndProcessWinners(connection, 2, winningNumbers.prize2, "exact");
+        allWinners.prize3 = await findAndProcessWinners(connection, 3, winningNumbers.prize3, "exact");
+        allWinners.last3 = await findAndProcessWinners(connection, 4, winningNumbers.last3, "suffix");
+        allWinners.last2 = await findAndProcessWinners(connection, 5, winningNumbers.last2, "suffix");
+        
+        // ... (The rest of the code for commit and response) ...
         await connection.commit();
         res.status(200).json({
-            message: "การออกรางวัลเสร็จสมบูรณ์",
-            winningNumbers,
-            winners: allWinners
+            message: `การออกรางวัลแบบ '${drawType}' เสร็จสมบูรณ์`,
+            winningNumbers: winningNumbers,
+            winners: allWinners,
         });
 
     } catch (error) {
