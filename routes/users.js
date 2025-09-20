@@ -17,7 +17,7 @@ router.get('/:userId/tickets', async (req, res) => {
         const sqlQuery = `
             SELECT
                 lt.ticket_number,
-                pt.ptype_name,
+                pt.name,
                 pt.reward
             FROM
                 lotto_item li
