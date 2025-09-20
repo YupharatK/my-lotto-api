@@ -2,55 +2,58 @@ const express = require('express');
 const db = require('../db'); // <-- ตรวจสอบให้แน่ใจว่า path ไปยังไฟล์เชื่อมต่อ DB ของคุณถูกต้อง
 const router = express.Router();
 
-// GET - ดึงข้อมูลสลากที่ซื้อทั้งหมดพร้อมผลรางวัลของผู้ใช้คนเดียว
+
+// GET - ดึงสลากของผู้ใช้ พร้อมบอกถูกรางวัล/ชื่อรางวัล/เงินรางวัล และส่ง lotto_item_id มาด้วย
 router.get('/:userId/tickets', async (req, res) => {
-    const { userId } = req.params;
+  const { userId } = req.params;
+  if (!userId) return res.status(400).json({ message: 'กรุณาระบุ User ID' });
 
-    if (!userId) {
-        return res.status(400).json({ message: 'กรุณาระบุ User ID' });
-    }
+  const connection = await db.getConnection();
+  try {
+    const sql = `
+      SELECT
+        li.loto_id                              AS lotto_item_id,   -- 👈 ส่ง id กลับไปให้แอปใช้เคลม
+        lt.ticket_number                        AS ticket_number,
+        li.status                               AS status,          -- e.g. 'new' | 'claimed'
+        li.draw_date                            AS draw_date,
+        pt.name                                 AS prize_name,
+        COALESCE(pt.reward, 0)                  AS reward,
+        CASE WHEN p.lotto_item_id IS NOT NULL
+             THEN 1 ELSE 0 END                  AS is_winner
+      FROM lotto_item li
+      JOIN lotto_tickets lt
+        ON li.ticket_id = lt.id
+      LEFT JOIN prizes p
+        ON p.lotto_item_id = li.loto_id
+      LEFT JOIN prizes_type pt
+        ON p.prizes_type = pt.ptype_id
+      WHERE li.userid = ?
+      ORDER BY li.loto_id DESC;
+    `;
 
-    const connection = await db.getConnection();
-    try {
-        // SQL Query ที่ใช้ LEFT JOIN เพื่อดึงสลากทั้งหมด
-        // และจะแสดงข้อมูลรางวัลเฉพาะสลากใบที่ถูกรางวัลเท่านั้น
-        const sqlQuery = `
-            SELECT
-                lt.ticket_number,
-                pt.name,
-                pt.reward
-            FROM
-                lotto_item li
-            JOIN
-                lotto_tickets lt ON li.ticket_id = lt.id
-            LEFT JOIN
-                prizes p ON li.loto_id = p.lotto_item_id
-            LEFT JOIN
-                prizes_type pt ON p.prizes_type = pt.ptype_id
-            WHERE
-                li.userid = ?
-            ORDER BY 
-                lt.ticket_number;
-        `;
+    const [rows] = await connection.execute(sql, [userId]);
 
-        const [tickets] = await connection.execute(sqlQuery, [userId]);
-        
-        // จัดรูปแบบข้อมูลเพื่อให้ฝั่งแอปนำไปใช้ง่ายขึ้น
-        const formattedTickets = tickets.map(ticket => ({
-            ticket_number: ticket.ticket_number,
-            is_winner: ticket.ptype_name !== null, // ถ้า ptype_name ไม่ใช่ null แสดงว่าถูกรางวัล
-            prize_name: ticket.ptype_name,
-            reward: ticket.reward
-        }));
+    // จัดรูปแบบให้อ่านง่ายในฝั่งแอป
+    const out = rows.map(r => ({
+      lotto_item_id : r.lotto_item_id,          // 👈 แอปจะอ่านคีย์นี้ (หรือ 'loto_id' ก็ได้ แต่คีย์นี้ชัดกว่า)
+      ticket_number : r.ticket_number,
+      status        : r.status,
+      draw_date     : r.draw_date,              // ถ้าอยากเป็นสตริง date เสมอ ให้เปิด dateStrings ใน config MySQL
+      is_winner     : !!r.is_winner,
+      prize_name    : r.prize_name || null,
+      reward        : Number(r.reward || 0),
+    }));
 
-        res.status(200).json(formattedTickets);
-
-    } catch (error) {
-        console.error("Get user tickets error:", error);
-        res.status(500).json({ message: "เกิดข้อผิดพลาดในการดึงข้อมูลสลาก" });
-    } finally {
-        connection.release();
-    }
+    res.status(200).json(out);
+  } catch (err) {
+    console.error('Get user tickets error:', err);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลสลาก' });
+  } finally {
+    connection.release();
+  }
 });
+
+module.exports = router;
+
 
 module.exports = router;
