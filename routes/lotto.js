@@ -77,6 +77,33 @@ router.post("/purchase", async (req, res) => {
   }
 });
 
-//
+router.get('/my', async (req, res) => {
+  const userId = req.user.id;
 
+  try {
+    const [rows] = await db.execute(
+      `SELECT 
+         li.loto_id, li.userid, li.ticket_id, li.purchased_at,
+         COALESCE(li.status, lt.status) AS status,
+         lt.ticket_number, CAST(lt.price AS DOUBLE) AS price
+       FROM lotto_item li
+       JOIN lotto_tickets lt ON lt.id = li.ticket_id
+       WHERE li.userid = ? AND COALESCE(li.status, lt.status) <> 'claimed'
+       ORDER BY li.purchased_at DESC, li.loto_id DESC`,
+      [userId]
+    );
+
+    res.json(rows.map(r => ({
+      lotoId: r.loto_id,
+      ticketId: r.ticket_id,
+      ticketNumber: r.ticket_number,
+      price: Number(r.price),
+      purchasedAt: r.purchased_at,
+      status: r.status
+    })));
+  } catch (e) {
+    console.error('Get my lottos:', e);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูล' });
+  }
+});
 module.exports = router;
