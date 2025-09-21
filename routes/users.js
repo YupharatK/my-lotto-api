@@ -2,44 +2,54 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET - ดึงสลากทั้งหมดของผู้ใช้พร้อมข้อมูลรางวัล (ถ้ามี)
+// GET - ดึงสลากทั้งหมดของผู้ใช้ พร้อมบอกว่าถูกรางวัล/ชื่อรางวัล/ยอดเงิน
 router.get('/:userId/tickets', async (req, res) => {
   const { userId } = req.params;
-  if (!userId) {
-    return res.status(400).json({ message: 'กรุณาระบุ User ID' });
-  }
+  if (!userId) return res.status(400).json({ message: 'กรุณาระบุ User ID' });
 
   let connection;
   try {
     connection = await db.getConnection();
 
-    // ใช้ชื่อคอลัมน์ตาม schema จริง ๆ: pt.name และ pt.reward (varchar)
-    // แปลง reward เป็นตัวเลขด้วย CAST (... AS DOUBLE) ให้ฝั่งแอปใช้สะดวก
-    const sqlQuery = `
+    const sql = `
       SELECT
+        li.loto_id                    AS lotto_item_id,
+        lt.id                         AS ticket_id,
         lt.ticket_number,
-        pt.name   AS prize_name,
-        CAST(pt.reward AS DOUBLE) AS reward
+        CAST(lt.price AS DECIMAL(10,2)) AS price,
+        li.status                     AS item_status,
+        DATE_FORMAT(li.purchased_at, '%Y-%m-%d %H:%i:%s') AS purchased_at,
+        pt.name                       AS prize_name,
+        CAST(REPLACE(pt.reward, ',', '') AS DECIMAL(18,2)) AS reward
       FROM lotto_item li
-      JOIN lotto_tickets lt   ON li.ticket_id    = lt.id
-      LEFT JOIN prizes p      ON li.loto_id      = p.lotto_item_id
-      LEFT JOIN prizes_type pt ON p.prizes_type  = pt.ptype_id
+      JOIN lotto_tickets lt  ON li.ticket_id     = lt.id
+      LEFT JOIN prizes p     ON p.lotto_item_id  = li.loto_id
+      LEFT JOIN prizes_type pt ON pt.ptype_id    = p.prizes_type
       WHERE li.userid = ?
-      ORDER BY lt.ticket_number;
+      ORDER BY li.purchased_at DESC, lt.ticket_number;
     `;
 
-    const [rows] = await connection.execute(sqlQuery, [userId]);
+    const [rows] = await connection.execute(sql, [userId]);
 
-    const formatted = rows.map(r => ({
+    const data = rows.map(r => ({
+      lotto_item_id: r.lotto_item_id,
+      ticket_id: r.ticket_id,
       ticket_number: r.ticket_number,
-      is_winner: r.prize_name !== null,   // มีชื่อรางวัล = ถูกรางวัล
-      prize_name: r.prize_name,           // null ถ้าไม่ถูกรางวัล
-      reward: r.prize_name !== null ? r.reward : null // ตัวเลข (DOUBLE) หรือ null
+      price: Number(r.price),
+      status: r.item_status,                      // 'active' | 'claimed'
+      purchased_at: r.purchased_at,
+      is_winner: r.prize_name != null,
+      prize_name: r.prize_name ?? null,
+      reward: r.prize_name != null ? Number(r.reward) : null
     }));
 
-    return res.status(200).json(formatted);
+    return res.status(200).json(data);
   } catch (err) {
-    console.error('Get user tickets error:', err?.code, err?.sqlMessage || err?.message);
+    console.error(
+      'Get user tickets error:',
+      err?.code, err?.errno, err?.sqlState,
+      err?.sqlMessage || err?.message
+    );
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลสลาก' });
   } finally {
     if (connection) connection.release();
