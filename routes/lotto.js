@@ -77,8 +77,8 @@ router.post("/purchase", async (req, res) => {
   }
 });
 
-// router.get('/my', async (req, res) => {
-//   const userId = req.user.id;
+//router.get('/my', authRequired, async (req, res) => {
+ // const userId = req.user.id;
 
 //   try {
 //     const [rows] = await db.execute(
