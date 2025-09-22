@@ -5,9 +5,9 @@ const db = require('../db');
 const router = express.Router();
 
 router.post('/claim', async (req, res) => {
-    const { userId, lottoItemId } = req.body;
+    const { userId, ticketNumber } = req.body;
 
-    if (!userId || !lottoItemId) {
+    if (!userId || !ticketNumber) {
         return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วน' });
     }
 
