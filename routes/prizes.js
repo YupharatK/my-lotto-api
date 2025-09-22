@@ -19,7 +19,7 @@ router.post('/claim', async (req, res) => {
         return res.status(400).json({ message: 'หมายเลขสลากไม่ถูกต้อง' });
     }
     // --- END: EDIT ---
-
+    console.log(`>>> Searching database for: userId=${userId}, ticket_id=${ticketNumber}`);
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
