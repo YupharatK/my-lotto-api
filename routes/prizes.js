@@ -4,8 +4,6 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// routes/prizes.js
-
 router.post('/claim', async (req, res) => {
     const { userId, lottoItemId } = req.body;
 
@@ -44,20 +42,32 @@ router.post('/claim', async (req, res) => {
 
         // --- All checks passed, proceed with claiming ---
 
-        // 3. ADDED: Add reward to user's wallet
+        // 3. Add reward to user's wallet
         await connection.execute(
             "UPDATE users SET wallet_balance = wallet_balance + ? WHERE user_id = ?",
             [prizeInfo.reward, userId]
         );
 
-        // 4. Mark the ticket as claimed
+        // 4. (เพิ่ม) ดึงยอดเงินใหม่หลังจากอัปเดตแล้ว
+        const [[user]] = await connection.execute(
+          "SELECT wallet_balance FROM users WHERE user_id = ?",
+          [userId]
+        );
+        const newBalance = user.wallet_balance;
+
+        // 5. (เดิม) Mark the ticket as claimed
         await connection.execute(
             "UPDATE lotto_item SET status = 'claimed' WHERE loto_id = ?",
             [lottoItemId]
         );
         
         await connection.commit();
-        res.status(200).json({ message: `ขึ้นเงินรางวัลจำนวน ${prizeInfo.reward} บาทสำเร็จ` });
+
+        // (แก้ไข) ส่ง newBalance กลับไปด้วย
+        res.status(200).json({ 
+            message: `ขึ้นเงินรางวัลจำนวน ${prizeInfo.reward} บาทสำเร็จ`,
+            newBalance: newBalance 
+        });
 
     } catch (error) {
         await connection.rollback();
