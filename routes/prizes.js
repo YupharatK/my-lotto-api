@@ -4,21 +4,30 @@ const db = require('../db');
 const router = express.Router();
 
 router.post('/claim', async (req, res) => {
-    const { userId, ticketNumber } = req.body;
+    // --- START: EDIT ---
+    const { userId, ticketNumber: ticketNumberStr } = req.body; // รับมาเป็น String ก่อน
 
-    if (!userId || !ticketNumber) {
+    if (!userId || !ticketNumberStr) {
         return res.status(400).json({ message: 'ข้อมูลไม่ครบถ้วน' });
     }
+
+    // แปลง String เป็น Number
+    const ticketNumber = parseInt(ticketNumberStr, 10); 
+    
+    // ตรวจสอบว่าแปลงค่าได้ถูกต้อง
+    if (isNaN(ticketNumber)) {
+        return res.status(400).json({ message: 'หมายเลขสลากไม่ถูกต้อง' });
+    }
+    // --- END: EDIT ---
 
     const connection = await db.getConnection();
     try {
         await connection.beginTransaction();
 
-        // ค้นหา loto_id จาก ticket_id และ userid
         const [lottoItems] = await connection.execute(
-            // --- จุดที่แก้ไขล่าสุด ---
             `SELECT loto_id FROM lotto_item WHERE userid = ? AND ticket_id = ?`,
-            [userId, ticketNumber]
+            // ใช้ตัวแปร ticketNumber (ที่เป็นตัวเลขแล้ว) ในการค้นหา
+            [userId, ticketNumber] 
         );
 
         if (lottoItems.length === 0) {
