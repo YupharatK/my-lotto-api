@@ -1,10 +1,9 @@
-// routes/prizes.js (ฉบับแก้ไขสมบูรณ์)
+// routes/prizes.js (ฉบับแก้ไขล่าสุด)
 const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
 router.post('/claim', async (req, res) => {
-    // 1. รับ ticketNumber (ไม่ใช่ lottoItemId)
     const { userId, ticketNumber } = req.body;
 
     if (!userId || !ticketNumber) {
@@ -15,10 +14,10 @@ router.post('/claim', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 2. ค้นหา loto_id จาก ticketNumber และ userId 
-        // (และอาจจะแก้ userid เป็น user_id ตามโครงสร้างตารางของคุณ)
+        // ค้นหา loto_id จาก ticket_id และ userid
         const [lottoItems] = await connection.execute(
-            `SELECT loto_id FROM lotto_item WHERE userid = ? AND ticket_number = ?`,
+            // --- จุดที่แก้ไขล่าสุด ---
+            `SELECT loto_id FROM lotto_item WHERE userid = ? AND ticket_id = ?`,
             [userId, ticketNumber]
         );
 
@@ -27,12 +26,9 @@ router.post('/claim', async (req, res) => {
             return res.status(404).json({ message: 'ไม่พบสลากหมายเลขนี้ของคุณ' });
         }
         
-        // 3. (จุดสำคัญ) ประกาศค่าให้ตัวแปร lottoItemId จากผลการค้นหา
         const lottoItemId = lottoItems[0].loto_id;
 
-        // --- ต่อจากนี้ไป เราสามารถใช้ตัวแปร lottoItemId ได้แล้ว ---
-
-        // 4. ตรวจสอบข้อมูลการถูกรางวัล
+        // ตรวจสอบข้อมูลการถูกรางวัล
         const [prizes] = await connection.execute(
             `SELECT 
                 li.status, 
@@ -41,7 +37,7 @@ router.post('/claim', async (req, res) => {
              JOIN lotto_item li ON p.lotto_item_id = li.loto_id
              JOIN prizes_type pt ON p.prizes_type = pt.ptype_id
              WHERE p.lotto_item_id = ? AND li.userid = ?`,
-            [lottoItemId, userId] // <-- ใช้ lottoItemId ที่เพิ่งสร้าง
+            [lottoItemId, userId]
         );
 
         if (prizes.length === 0) {
@@ -56,23 +52,23 @@ router.post('/claim', async (req, res) => {
             return res.status(409).json({ message: 'สลากใบนี้ถูกขึ้นเงินรางวัลไปแล้ว' });
         }
 
-        // 5. เพิ่มเงินเข้า Wallet
+        // เพิ่มเงินเข้า Wallet
         await connection.execute(
             "UPDATE users SET wallet_balance = wallet_balance + ? WHERE user_id = ?",
             [prizeInfo.reward, userId]
         );
 
-        // 6. ดึงยอดเงินใหม่
+        // ดึงยอดเงินใหม่
         const [[user]] = await connection.execute(
           "SELECT wallet_balance FROM users WHERE user_id = ?",
           [userId]
         );
         const newBalance = user.wallet_balance;
 
-        // 7. อัปเดตสถานะสลาก
+        // อัปเดตสถานะสลาก
         await connection.execute(
             "UPDATE lotto_item SET status = 'claimed' WHERE loto_id = ?",
-            [lottoItemId] // <-- ใช้ lottoItemId ที่เพิ่งสร้าง
+            [lottoItemId]
         );
         
         await connection.commit();
