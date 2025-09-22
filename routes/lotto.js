@@ -11,8 +11,9 @@ router.post("/purchase", async (req, res) => {
     return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน" });
   }
 
-  const connection = await db.getConnection();
+  let connection; // ประกาศ connection ไว้ข้างนอกเพื่อให้ finally รู้จัก
   try {
+    connection = await db.getConnection();
     await connection.beginTransaction();
 
     // 1. Find the ticket and check if it's available, locking the row
@@ -39,7 +40,6 @@ router.post("/purchase", async (req, res) => {
     );
 
     const user = users[0];
-    // CHANGED: Convert strings to numbers before comparing
     if (parseFloat(user.wallet_balance) < parseFloat(ticket.price)) {
       await connection.rollback();
       return res.status(402).json({ message: "ยอดเงินใน Wallet ไม่เพียงพอ" });
@@ -60,22 +60,39 @@ router.post("/purchase", async (req, res) => {
     );
 
     // 5. Create a record in lotto_item to link user and ticket
-    // Assuming lotto_item's `ticket_id` is the foreign key to lotto_tickets' `id`
     await connection.execute(
       "INSERT INTO lotto_item (userid, ticket_id, purchased_at) VALUES (?, ?, NOW())",
       [userId, ticket.id]
     );
 
     await connection.commit();
-    res.status(200).json({ message: `ซื้อสลากหมายเลข ${ticketNumber} สำเร็จ` });
+
+    // --- START: ส่วนที่แก้ไข ---
+
+    // (เพิ่ม) 6. ดึงยอดเงินล่าสุดหลังจากทำรายการสำเร็จ
+    const [[finalUser]] = await connection.execute(
+        "SELECT wallet_balance FROM users WHERE user_id = ?",
+        [userId]
+    );
+    const newBalance = finalUser.wallet_balance;
+
+    // (แก้ไข) 7. ส่ง Response กลับไปพร้อม newBalance
+    res.status(200).json({ 
+        message: `ซื้อสลากหมายเลข ${ticketNumber} สำเร็จ`,
+        newBalance: newBalance // <-- เพิ่ม Key นี้
+    });
+    
+    // --- END: ส่วนที่แก้ไข ---
+
   } catch (error) {
-    await connection.rollback();
+    if(connection) await connection.rollback(); // ตรวจสอบก่อน rollback
     console.error("Purchase Error:", error);
     res.status(500).json({ message: "เกิดข้อผิดพลาดในการซื้อสลาก" });
   } finally {
-    connection.release();
+    if(connection) connection.release(); // ตรวจสอบก่อน release
   }
 });
+
 
 //router.get('/my', authRequired, async (req, res) => {
  // const userId = req.user.id;
