@@ -49,7 +49,48 @@ router.get('/:userId/tickets', async (req, res) => {
     }
 });
 
+// POST /tickets/mark-as-checked
+router.post("/mark-as-checked", async (req, res) => {
+    const { userId, ticketNumber } = req.body;
 
-module.exports = router;
+    if (!userId || !ticketNumber) {
+        return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน" });
+    }
+
+    let connection;
+    try {
+        connection = await db.getConnection();
+        
+        // ค้นหา loto_id จาก lotto_item โดย JOIN กับ lotto_tickets
+        const findItemQuery = `
+            SELECT li.loto_id 
+            FROM lotto_item li 
+            JOIN lotto_tickets lt ON li.ticket_id = lt.id 
+            WHERE li.userid = ? AND lt.ticket_number = ?
+        `;
+        const [lottoItems] = await connection.execute(findItemQuery, [userId, ticketNumber]);
+
+        if (lottoItems.length === 0) {
+            return res.status(404).json({ message: "ไม่พบสลากหมายเลขนี้ของคุณ" });
+        }
+        
+        const lottoItemId = lottoItems[0].loto_id;
+
+        // อัปเดตสถานะเป็น 'checked'
+        await connection.execute(
+            "UPDATE lotto_item SET status = 'checked' WHERE loto_id = ?",
+            [lottoItemId]
+        );
+
+        res.status(200).json({ message: "บันทึกสถานะสลากเรียบร้อย" });
+
+    } catch (error) {
+        console.error("Mark as checked Error:", error);
+        res.status(500).json({ message: "เกิดข้อผิดพลาดในการอัปเดตสถานะ" });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
 
 module.exports = router;
