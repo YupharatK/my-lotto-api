@@ -310,62 +310,77 @@ router.get("/results/latest", async (req, res) => {
 });
 
 // POST /reset-all-users
-router.post("/reset-all-users", async (req, res) => {
+router.post('/reset-all-users', async (req, res) => {
   const { secret_key } = req.body;
 
-  // --- 1. การป้องกันเบื้องต้น ---
-  // ควรตั้งรหัสลับนี้ให้ซับซ้อนและเก็บไว้ใน .env ในโปรเจกต์จริง
-  if (secret_key !== "123") {
-    return res.status(403).json({ message: "ไม่ได้รับอนุญาต" });
+  if (secret_key !== '123') {
+    return res.status(403).json({ message: 'ไม่ได้รับอนุญาต' });
   }
 
   let connection;
   try {
     connection = await db.getConnection();
-    // --- 2. เริ่ม Transaction เพื่อให้การทำงานทั้งหมดสำเร็จหรือล้มเหลวพร้อมกัน ---
     await connection.beginTransaction();
 
-    // --- 3. ค้นหา ID ของผู้ใช้ที่ไม่ใช่ Admin ทั้งหมด ---
     const [usersToDelete] = await connection.execute(
       "SELECT user_id FROM users WHERE role != 'admin'"
     );
 
     if (usersToDelete.length > 0) {
-      const userIdsToDelete = usersToDelete.map((u) => u.user_id);
+      const userIdsToDelete = usersToDelete.map(u => u.user_id);
 
-      // --- 4. ลบข้อมูลที่เกี่ยวข้องก่อน (lotto_item) ---
-      // ใช้ `userid` ตาม schema ของตาราง lotto_item
-      const lottoPlaceholders = userIdsToDelete.map(() => "?").join(",");
+      // --- START: ส่วนที่แก้ไขและเพิ่มเติม ---
+
+      // 1. (ใหม่) ค้นหา loto_id ทั้งหมดที่เกี่ยวข้องกับ user ที่จะลบ
+      const lottoIdPlaceholders = userIdsToDelete.map(() => '?').join(',');
+      const [lottoItemsToDelete] = await connection.execute(
+        `SELECT loto_id FROM lotto_item WHERE userid IN (${lottoIdPlaceholders})`,
+        userIdsToDelete
+      );
+
+      let prizesResult = { affectedRows: 0 }; // กำหนดค่าเริ่มต้น
+      // ถ้ามี lotto_id ที่ต้องจัดการ
+      if (lottoItemsToDelete.length > 0) {
+        const lotoIds = lottoItemsToDelete.map(item => item.loto_id);
+
+        // 2. (ใหม่) ลบข้อมูลที่เกี่ยวข้องในตาราง 'prizes' ก่อน
+        const prizePlaceholders = lotoIds.map(() => '?').join(',');
+        const prizeSql = `DELETE FROM prizes WHERE lotto_item_id IN (${prizePlaceholders})`;
+        [prizesResult] = await connection.execute(prizeSql, lotoIds);
+        console.log(`ลบข้อมูลรางวัลไป ${prizesResult.affectedRows} แถว`);
+      }
+
+      // 3. ลบข้อมูลใน 'lotto_item'
+      const lottoPlaceholders = userIdsToDelete.map(() => '?').join(',');
       const lottoSql = `DELETE FROM lotto_item WHERE userid IN (${lottoPlaceholders})`;
-      const [lottoResult] = await connection.execute(lottoSql, userIdsToDelete); // ส่ง ID เข้าไปตรงๆ
-
+      const [lottoResult] = await connection.execute(lottoSql, userIdsToDelete);
       console.log(`ลบข้อมูลสลากไป ${lottoResult.affectedRows} แถว`);
 
-      // --- 5. ลบข้อมูลผู้ใช้ที่ไม่ใช่ Admin ---
-      // ทำเช่นเดียวกันกับตาราง users
-      const userPlaceholders = userIdsToDelete.map(() => "?").join(",");
+      // 4. ลบข้อมูลใน 'users'
+      const userPlaceholders = userIdsToDelete.map(() => '?').join(',');
       const userSql = `DELETE FROM users WHERE user_id IN (${userPlaceholders})`;
-      const [userResult] = await connection.execute(userSql, userIdsToDelete); // ส่ง ID เข้าไปตรงๆ
-
+      const [userResult] = await connection.execute(userSql, userIdsToDelete);
       console.log(`ลบข้อมูลผู้ใช้ไป ${userResult.affectedRows} แถว`);
 
-      // --- 6. ยืนยันการเปลี่ยนแปลงทั้งหมดใน Transaction ---
+      // --- END: ส่วนที่แก้ไขและเพิ่มเติม ---
+
       await connection.commit();
       res.status(200).json({
-        message: "รีเซ็ตข้อมูลผู้ใช้ทั้งหมดเรียบร้อย",
+        message: 'รีเซ็ตข้อมูลทั้งหมดเรียบร้อย',
         deleted_users: userResult.affectedRows,
         deleted_lotto_items: lottoResult.affectedRows,
+        deleted_prizes: prizesResult.affectedRows // ส่งข้อมูลการลบรางวัลกลับไปด้วย
       });
+
     } else {
-      // กรณียังไม่มี user ให้ลบ
       await connection.commit();
-      res.status(200).json({ message: "ไม่พบข้อมูลผู้ใช้ที่ต้องรีเซ็ต" });
+      res.status(200).json({ message: 'ไม่พบข้อมูลที่ต้องรีเซ็ต' });
     }
+
   } catch (error) {
-    // --- 7. หากเกิดข้อผิดพลาด ให้ยกเลิกการเปลี่ยนแปลงทั้งหมด ---
     if (connection) await connection.rollback();
-    console.error("Reset Users Error:", error);
-    res.status(500).json({ message: "เกิดข้อผิดพลาดระหว่างการรีเซ็ตข้อมูล" });
+    console.error('Reset Users Error:', error);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดระหว่างการรีเซ็ตข้อมูล' });
   } finally {
     if (connection) connection.release();
   }
