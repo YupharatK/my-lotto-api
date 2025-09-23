@@ -5,10 +5,13 @@ const router = express.Router();
 
 // --- API Endpoint: POST /api/auth/register ---
 router.post('/register', async (req, res) => {
+  let connection;
   try {
-    // แก้ไขตรงนี้
+    connection = await db.getConnection(); // ดึง Connection มาใช้งาน
+    
     const { username, email, password, wallet_balance } = req.body;
 
+    // --- การตรวจสอบข้อมูลเบื้องต้น ---
     if (!username || !email || !password || wallet_balance === undefined) {
       return res.status(400).json({ message: 'กรุณากรอกข้อมูลให้ครบทุกช่อง' });
     }
@@ -18,9 +21,22 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'ยอดเงินเริ่มต้นต้องเป็นตัวเลขและไม่ต่ำกว่า 100' });
     }
 
+    // 1. ค้นหาในฐานข้อมูลว่ามีอีเมลนี้แล้วหรือยัง
+    const [existingUsers] = await connection.execute(
+      'SELECT id FROM users WHERE email = ?',
+      [email]
+    );
+
+    // 2. ถ้าผลลัพธ์ที่ได้มีมากกว่า 0 แถว แสดงว่ามีอีเมลนี้อยู่แล้ว
+    if (existingUsers.length > 0) {
+      return res.status(409).json({ message: 'อีเมลนี้ถูกใช้งานแล้ว' });
+    }
+    // --- สิ้นสุดส่วนที่เพิ่มเข้ามา ---
+
     const defaultRole = 'user';
 
-    const [result] = await db.execute(
+    // 3. ถ้าไม่ซ้ำ ก็ทำการเพิ่มผู้ใช้ใหม่
+    const [result] = await connection.execute(
       'INSERT INTO users (username, email, password, wallet_balance, role) VALUES (?, ?, ?, ?, ?)',
       [username, email, password, amount, defaultRole]
     );
@@ -28,7 +44,10 @@ router.post('/register', async (req, res) => {
     res.status(201).json({ message: 'สมัครสมาชิกสำเร็จ', userId: result.insertId }); 
 
   } catch (error) {
-    // ... (error handling)
+    console.error('Registration Error:', error);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการสมัครสมาชิก' });
+  } finally {
+    if (connection) connection.release(); // คืน Connection กลับสู่ Pool
   }
 });
 
