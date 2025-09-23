@@ -82,13 +82,10 @@ router.post("/generate-tickets", async (req, res) => {
   }
 });
 
-
 // routes/lotto.js หรือ routes/admin.js ก็ได้
 router.get("/tickets", async (req, res) => {
   try {
-    const [tickets] = await db.execute(
-      "SELECT * FROM lotto_tickets"
-    );
+    const [tickets] = await db.execute("SELECT * FROM lotto_tickets");
     res.status(200).json(tickets);
   } catch (error) {
     console.error("Get Tickets Error:", error);
@@ -96,23 +93,27 @@ router.get("/tickets", async (req, res) => {
   }
 });
 
-
 // Api ออกรางวัล
 // ในไฟล์ routes/admin.js
 
 // (ต้องมีฟังก์ชัน isAdmin และ db connection เหมือนเดิม)
-router.post('/draw', async (req, res) => {
+router.post("/draw", async (req, res) => {
   // ... (ส่วนโค้ดด้านบนเหมือนเดิมทั้งหมด) ...
-  const { adminUserId, drawType = 'sold' } = req.body; // แก้ไข default เป็น sold
+  const { adminUserId, drawType = "sold" } = req.body; // แก้ไข default เป็น sold
   if (!(await isAdmin(adminUserId))) {
-    return res.status(403).json({ message: 'Permission denied' });
+    return res.status(403).json({ message: "Permission denied" });
   }
 
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
 
-    const findAndProcessWinners = async (connection, prizeTypeId, numberToMatch, matchType = 'exact') => {
+    const findAndProcessWinners = async (
+      connection,
+      prizeTypeId,
+      numberToMatch,
+      matchType = "exact"
+    ) => {
       let winnersList = [];
       // SQL Query ถูกต้องแล้ว แต่แก้ไขเล็กน้อยให้ตรงตาม backend ที่คุณใช้
       const sqlQuery = `
@@ -121,16 +122,28 @@ router.post('/draw', async (req, res) => {
                 JOIN users u ON li.userid = u.user_id 
                 JOIN prizes_type pt ON pt.ptype_id = ? 
                 JOIN lotto_tickets lt ON li.ticket_id = lt.id 
-                WHERE lt.ticket_number ${matchType === 'exact' ? '= ?' : 'LIKE ?'}
+                WHERE lt.ticket_number ${
+                  matchType === "exact" ? "= ?" : "LIKE ?"
+                }
             `;
 
       // แก้ไข matchType สำหรับ LIKE ให้ถูกต้อง
-      const matchPattern = matchType === 'exact' ? numberToMatch : `%${numberToMatch}`;
-      const [winners] = await connection.execute(sqlQuery, [prizeTypeId, matchPattern]);
+      const matchPattern =
+        matchType === "exact" ? numberToMatch : `%${numberToMatch}`;
+      const [winners] = await connection.execute(sqlQuery, [
+        prizeTypeId,
+        matchPattern,
+      ]);
 
       for (const winner of winners) {
-        await connection.execute("INSERT INTO prizes (lotto_item_id, prizes_type) VALUES (?, ?)", [winner.loto_id, prizeTypeId]);
-        winnersList.push({ username: winner.username, ticket_number: winner.ticket_number });
+        await connection.execute(
+          "INSERT INTO prizes (lotto_item_id, prizes_type) VALUES (?, ?)",
+          [winner.loto_id, prizeTypeId]
+        );
+        winnersList.push({
+          username: winner.username,
+          ticket_number: winner.ticket_number,
+        });
       }
       return winnersList;
     };
@@ -138,14 +151,19 @@ router.post('/draw', async (req, res) => {
     let winningNumbers = {};
     const allWinners = {};
 
-    if (drawType === 'sold') { // 'from_sold' ในโค้ดเก่า, Flutter ส่ง 'sold'
+    if (drawType === "sold") {
+      // 'from_sold' ในโค้ดเก่า, Flutter ส่ง 'sold'
       const [soldTickets] = await connection.execute(
         "SELECT lt.ticket_number FROM lotto_item li JOIN lotto_tickets lt ON li.ticket_id = lt.id"
       );
 
       if (soldTickets.length < 5) {
         await connection.rollback();
-        return res.status(400).json({ message: `มีสลากขายไปเพียง ${soldTickets.length} ใบ ไม่สามารถออกรางวัลได้` });
+        return res
+          .status(400)
+          .json({
+            message: `มีสลากขายไปเพียง ${soldTickets.length} ใบ ไม่สามารถออกรางวัลได้`,
+          });
       }
 
       const shuffledTickets = [...soldTickets].sort(() => 0.5 - Math.random());
@@ -158,8 +176,8 @@ router.post('/draw', async (req, res) => {
         last3: winningTickets[0].ticket_number.slice(-3),
         last2: winningTickets[3].ticket_number.slice(-2),
       };
-
-    } else { // 'all'
+    } else {
+      // 'all'
       const prize1 = String(Math.floor(100000 + Math.random() * 900000));
       const prize2 = String(Math.floor(100000 + Math.random() * 900000));
       const prize3 = String(Math.floor(100000 + Math.random() * 900000));
@@ -168,11 +186,36 @@ router.post('/draw', async (req, res) => {
       winningNumbers = { prize1, prize2, prize3, last3, last2 };
     }
 
-    allWinners.prize1 = await findAndProcessWinners(connection, 1, winningNumbers.prize1, "exact");
-    allWinners.prize2 = await findAndProcessWinners(connection, 2, winningNumbers.prize2, "exact");
-    allWinners.prize3 = await findAndProcessWinners(connection, 3, winningNumbers.prize3, "exact");
-    allWinners.last3 = await findAndProcessWinners(connection, 4, winningNumbers.last3, "suffix"); // แก้เป็น suffix
-    allWinners.last2 = await findAndProcessWinners(connection, 5, winningNumbers.last2, "suffix"); // แก้เป็น suffix
+    allWinners.prize1 = await findAndProcessWinners(
+      connection,
+      1,
+      winningNumbers.prize1,
+      "exact"
+    );
+    allWinners.prize2 = await findAndProcessWinners(
+      connection,
+      2,
+      winningNumbers.prize2,
+      "exact"
+    );
+    allWinners.prize3 = await findAndProcessWinners(
+      connection,
+      3,
+      winningNumbers.prize3,
+      "exact"
+    );
+    allWinners.last3 = await findAndProcessWinners(
+      connection,
+      4,
+      winningNumbers.last3,
+      "suffix"
+    ); // แก้เป็น suffix
+    allWinners.last2 = await findAndProcessWinners(
+      connection,
+      5,
+      winningNumbers.last2,
+      "suffix"
+    ); // แก้เป็น suffix
 
     // --- เพิ่มส่วนนี้ ---
     // V V V V V V V V V V V
@@ -187,7 +230,7 @@ router.post('/draw', async (req, res) => {
       winningNumbers.prize2,
       winningNumbers.prize3,
       winningNumbers.last3,
-      winningNumbers.last2
+      winningNumbers.last2,
     ];
     await connection.execute(insertDrawSql, drawValues);
     // ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
@@ -199,7 +242,6 @@ router.post('/draw', async (req, res) => {
       winningNumbers: winningNumbers,
       winners: allWinners,
     });
-
   } catch (error) {
     // ... (ส่วน catch และ finally เหมือนเดิม) ...
     await connection.rollback();
@@ -210,13 +252,11 @@ router.post('/draw', async (req, res) => {
   }
 });
 
-
-
 //Api รีเซ็ตระบบสุ่มเลข 100  //
-router.post('/reset-system', async (req, res) => {
+router.post("/reset-system", async (req, res) => {
   const { adminUserId } = req.body;
   if (!(await isAdmin(adminUserId))) {
-    return res.status(403).json({ message: 'Permission denied' });
+    return res.status(403).json({ message: "Permission denied" });
   }
 
   const connection = await db.getConnection();
@@ -232,8 +272,9 @@ router.post('/reset-system', async (req, res) => {
     // --- 2. REMOVED: The ticket generation logic is gone ---
 
     await connection.commit();
-    res.status(200).json({ message: `รีเซ็ตระบบ ล้างข้อมูลสลากและผลรางวัลทั้งหมดสำเร็จ` });
-
+    res
+      .status(200)
+      .json({ message: `รีเซ็ตระบบ ล้างข้อมูลสลากและผลรางวัลทั้งหมดสำเร็จ` });
   } catch (error) {
     await connection.rollback();
     console.error("System Reset Error:", error);
@@ -244,7 +285,7 @@ router.post('/reset-system', async (req, res) => {
 });
 
 // GET - ดึงผลรางวัลงวดล่าสุด
-router.get('/results/latest', async (req, res) => {
+router.get("/results/latest", async (req, res) => {
   const connection = await db.getConnection();
   try {
     const sqlQuery = `
@@ -255,12 +296,11 @@ router.get('/results/latest', async (req, res) => {
     const [results] = await connection.execute(sqlQuery);
 
     if (results.length === 0) {
-      return res.status(404).json({ message: 'ยังไม่มีข้อมูลผลการออกรางวัล' });
+      return res.status(404).json({ message: "ยังไม่มีข้อมูลผลการออกรางวัล" });
     }
 
     // ส่งข้อมูลผลรางวัลล่าสุดกลับไป
     res.status(200).json(results[0]);
-
   } catch (error) {
     console.error("Get Latest Results Error:", error);
     res.status(500).json({ message: "เกิดข้อผิดพลาดในการดึงข้อมูล" });
@@ -270,13 +310,13 @@ router.get('/results/latest', async (req, res) => {
 });
 
 // POST /reset-all-users
-router.post('/reset-all-users', async (req, res) => {
+router.post("/reset-all-users", async (req, res) => {
   const { secret_key } = req.body;
 
   // --- 1. การป้องกันเบื้องต้น ---
   // ควรตั้งรหัสลับนี้ให้ซับซ้อนและเก็บไว้ใน .env ในโปรเจกต์จริง
-  if (secret_key !== '123') {
-    return res.status(403).json({ message: 'ไม่ได้รับอนุญาต' });
+  if (secret_key !== "123") {
+    return res.status(403).json({ message: "ไม่ได้รับอนุญาต" });
   }
 
   let connection;
@@ -291,43 +331,41 @@ router.post('/reset-all-users', async (req, res) => {
     );
 
     if (usersToDelete.length > 0) {
-      const userIdsToDelete = usersToDelete.map(u => u.user_id);
+      const userIdsToDelete = usersToDelete.map((u) => u.user_id);
 
       // --- 4. ลบข้อมูลที่เกี่ยวข้องก่อน (lotto_item) ---
       // ใช้ `userid` ตาม schema ของตาราง lotto_item
-      const [lottoResult] = await connection.execute(
-        'DELETE FROM lotto_item WHERE userid IN (?)',
-        [userIdsToDelete]
-      );
+      const lottoPlaceholders = userIdsToDelete.map(() => "?").join(",");
+      const lottoSql = `DELETE FROM lotto_item WHERE userid IN (${lottoPlaceholders})`;
+      const [lottoResult] = await connection.execute(lottoSql, userIdsToDelete); // ส่ง ID เข้าไปตรงๆ
+
       console.log(`ลบข้อมูลสลากไป ${lottoResult.affectedRows} แถว`);
 
       // --- 5. ลบข้อมูลผู้ใช้ที่ไม่ใช่ Admin ---
-      // ใช้ `user_id` ตาม schema ของตาราง users
-      const [userResult] = await connection.execute(
-        'DELETE FROM users WHERE user_id IN (?)',
-        [userIdsToDelete]
-      );
+      // ทำเช่นเดียวกันกับตาราง users
+      const userPlaceholders = userIdsToDelete.map(() => "?").join(",");
+      const userSql = `DELETE FROM users WHERE user_id IN (${userPlaceholders})`;
+      const [userResult] = await connection.execute(userSql, userIdsToDelete); // ส่ง ID เข้าไปตรงๆ
+
       console.log(`ลบข้อมูลผู้ใช้ไป ${userResult.affectedRows} แถว`);
 
       // --- 6. ยืนยันการเปลี่ยนแปลงทั้งหมดใน Transaction ---
       await connection.commit();
-      res.status(200).json({ 
-        message: 'รีเซ็ตข้อมูลผู้ใช้ทั้งหมดเรียบร้อย',
+      res.status(200).json({
+        message: "รีเซ็ตข้อมูลผู้ใช้ทั้งหมดเรียบร้อย",
         deleted_users: userResult.affectedRows,
-        deleted_lotto_items: lottoResult.affectedRows
+        deleted_lotto_items: lottoResult.affectedRows,
       });
-
     } else {
       // กรณียังไม่มี user ให้ลบ
       await connection.commit();
-      res.status(200).json({ message: 'ไม่พบข้อมูลผู้ใช้ที่ต้องรีเซ็ต' });
+      res.status(200).json({ message: "ไม่พบข้อมูลผู้ใช้ที่ต้องรีเซ็ต" });
     }
-
   } catch (error) {
     // --- 7. หากเกิดข้อผิดพลาด ให้ยกเลิกการเปลี่ยนแปลงทั้งหมด ---
     if (connection) await connection.rollback();
-    console.error('Reset Users Error:', error);
-    res.status(500).json({ message: 'เกิดข้อผิดพลาดระหว่างการรีเซ็ตข้อมูล' });
+    console.error("Reset Users Error:", error);
+    res.status(500).json({ message: "เกิดข้อผิดพลาดระหว่างการรีเซ็ตข้อมูล" });
   } finally {
     if (connection) connection.release();
   }
