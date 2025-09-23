@@ -268,4 +268,69 @@ router.get('/results/latest', async (req, res) => {
     connection.release();
   }
 });
+
+// POST /reset-all-users
+router.post('/reset-all-users', async (req, res) => {
+  const { secret_key } = req.body;
+
+  // --- 1. การป้องกันเบื้องต้น ---
+  // ควรตั้งรหัสลับนี้ให้ซับซ้อนและเก็บไว้ใน .env ในโปรเจกต์จริง
+  if (secret_key !== '123') {
+    return res.status(403).json({ message: 'ไม่ได้รับอนุญาต' });
+  }
+
+  let connection;
+  try {
+    connection = await db.getConnection();
+    // --- 2. เริ่ม Transaction เพื่อให้การทำงานทั้งหมดสำเร็จหรือล้มเหลวพร้อมกัน ---
+    await connection.beginTransaction();
+
+    // --- 3. ค้นหา ID ของผู้ใช้ที่ไม่ใช่ Admin ทั้งหมด ---
+    const [usersToDelete] = await connection.execute(
+      "SELECT user_id FROM users WHERE role != 'admin'"
+    );
+
+    if (usersToDelete.length > 0) {
+      const userIdsToDelete = usersToDelete.map(u => u.user_id);
+
+      // --- 4. ลบข้อมูลที่เกี่ยวข้องก่อน (lotto_item) ---
+      // ใช้ `userid` ตาม schema ของตาราง lotto_item
+      const [lottoResult] = await connection.execute(
+        'DELETE FROM lotto_item WHERE userid IN (?)',
+        [userIdsToDelete]
+      );
+      console.log(`ลบข้อมูลสลากไป ${lottoResult.affectedRows} แถว`);
+
+      // --- 5. ลบข้อมูลผู้ใช้ที่ไม่ใช่ Admin ---
+      // ใช้ `user_id` ตาม schema ของตาราง users
+      const [userResult] = await connection.execute(
+        'DELETE FROM users WHERE user_id IN (?)',
+        [userIdsToDelete]
+      );
+      console.log(`ลบข้อมูลผู้ใช้ไป ${userResult.affectedRows} แถว`);
+
+      // --- 6. ยืนยันการเปลี่ยนแปลงทั้งหมดใน Transaction ---
+      await connection.commit();
+      res.status(200).json({ 
+        message: 'รีเซ็ตข้อมูลผู้ใช้ทั้งหมดเรียบร้อย',
+        deleted_users: userResult.affectedRows,
+        deleted_lotto_items: lottoResult.affectedRows
+      });
+
+    } else {
+      // กรณียังไม่มี user ให้ลบ
+      await connection.commit();
+      res.status(200).json({ message: 'ไม่พบข้อมูลผู้ใช้ที่ต้องรีเซ็ต' });
+    }
+
+  } catch (error) {
+    // --- 7. หากเกิดข้อผิดพลาด ให้ยกเลิกการเปลี่ยนแปลงทั้งหมด ---
+    if (connection) await connection.rollback();
+    console.error('Reset Users Error:', error);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดระหว่างการรีเซ็ตข้อมูล' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
 module.exports = router;
