@@ -23,7 +23,7 @@ router.post('/register', async (req, res) => {
 
     // 1. ค้นหาในฐานข้อมูลว่ามีอีเมลนี้แล้วหรือยัง
     const [existingUsers] = await connection.execute(
-      'SELECT id FROM users WHERE email = ?',
+      'SELECT user_id FROM users WHERE email = ?',
       [email]
     );
 
